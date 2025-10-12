@@ -1,0 +1,63 @@
+variables:
+    NODE_VERSION: '20'
+    DOCKER_HOST: 'tcp://10.0.3.20:2375'
+
+stages:
+    - build
+    - package
+
+build-typescript:
+    stage: build
+    image: node:${NODE_VERSION}
+    before_script:
+        - npm ci --cache .npm --prefer-offline --no-audit
+    script:
+        - npm run build:ts
+    artifacts:
+        paths:
+            - dist/
+        expire_in: 1 hour
+
+package-linux:
+    stage: package
+    image: node:${NODE_VERSION}
+    before_script:
+        - npm ci --cache .npm --prefer-offline --no-audit
+    script:
+        - npm run build:linux
+    artifacts:
+        paths:
+            - release/
+        expire_in: 1 week
+    only:
+        - main
+        - dev
+
+package-windows:
+    stage: package
+    image: node:${NODE_VERSION}
+    before_script:
+        - npm ci --cache .npm --prefer-offline --no-audit
+    script:
+        - npm run build:windows
+    artifacts:
+        paths:
+            - release/
+        expire_in: 1 week
+    only:
+        - main
+        - dev
+
+package-macos:
+    stage: package
+    image: node:${NODE_VERSION}
+    before_script:
+        - npm ci --cache .npm --prefer-offline --no-audit
+    script:
+        - npm run build:macos
+    artifacts:
+        paths:
+            - release/
+        expire_in: 1 week
+    only:
+        - test-repo
