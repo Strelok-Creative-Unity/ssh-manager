@@ -1,0 +1,48 @@
+{
+    "name": "ssh-manager",
+    "version": "0.1.0",
+    "description": "SSH connection and tunnel manager",
+    "main": "dist/app.js",
+    "scripts": {
+        "build": "tsc && npx pkg .",
+        "start": "node dist/index.js",
+        "dev": "ts-node src/index.ts",
+        "tunnel": "ts-node src/ssh-tunel.ts",
+        "watch": "tsc --watch"
+    },
+    "bin": "dist/app.js",
+    "pkg": {
+        "scripts": [
+            "dist/**/*.js"
+        ],
+        "assets": [],
+        "targets": [
+            "node18-linux-x64",
+            "node18-win-x64"
+        ],
+        "outputPath": "release"
+    },
+    "dependencies": {
+        "@inquirer/prompts": "^7.8.6",
+        "asyncsocket": "github:strelok-js/AsyncSocket#test",
+        "ssh2": "^1.17.0"
+    },
+    "test": "#asv2-ts",
+    "devDependencies": {
+        "@types/node": "^20.19.17",
+        "@types/ssh2": "^1.15.5",
+        "pkg": "^5.8.1",
+        "ts-node": "^10.9.0",
+        "typescript": "^5.0.0"
+    },
+    "keywords": [
+        "ssh",
+        "tunnel",
+        "manager"
+    ],
+    "author": [
+        "THError",
+        "Strelok.js"
+    ],
+    "license": "MIT"
+}
