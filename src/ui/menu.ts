@@ -3,8 +3,9 @@ import { Server, Tunnel } from '../types';
 import { ConfigManager } from '../utils/config';
 import { CryptoManager } from '../utils/crypto';
 import { testSSHConnection } from '../ssh/connection';
-import { ServerValidator, TunnelValidator, PasswordValidator, ValidationError } from '../utils/validation';
+import { ServerValidator, TunnelValidator, PasswordValidator } from '../utils/validation';
 import { logger } from '../utils/logger';
+import { ValidationError } from '../exceptions/validation';
 
 export class MenuManager {
     private password: string = '';
@@ -25,6 +26,8 @@ export class MenuManager {
      * Главное меню
      */
     async showMainMenu(): Promise<string> {
+        this.console.clear();
+        global.currentPlace = 'main';
         const config = ConfigManager.getConfig();
         const serverNames = Object.keys(config.servers);
 
@@ -39,12 +42,30 @@ export class MenuManager {
             { name: 'Выход', value: 'exit' },
         ];
 
-        this.console.clear();
-
         return await select({
             message: 'Выберите действие:',
             pageSize: process.stdout.rows - 3, // 3 - это высота меню, не убирать
             choices,
+        });
+    }
+
+    private async handleValidationError(error: Error): Promise<void> {
+        global.currentPlace = 'exception';
+        if (error instanceof ValidationError) {
+            this.console.error(`Ошибка валидации: ${error.message}`);
+            logger.error('Validation error in menu', error);
+        } else if (error.name === 'ExitPromptError') {
+            this.console.log('\nОперация отменена пользователем.');
+            logger.info('User cancelled operation with Ctrl+C');
+            return; // Не показываем confirm для ExitPromptError
+        } else {
+            this.console.error(`Ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
+            logger.error('Error in menu', error as Error);
+        }
+
+        await confirm({
+            message: 'Нажмите Enter для продолжения...',
+            default: true,
         });
     }
 
@@ -53,89 +74,78 @@ export class MenuManager {
      */
     async showAddConnectionMenu(): Promise<Server | null> {
         this.console.clear();
+        global.currentPlace = 'addConnection';
+        const name = await input({ message: 'Название подключения:' });
+        ServerValidator.validateServerName(name);
 
-        try {
-            const name = await input({ message: 'Название подключения:' });
-            ServerValidator.validateServerName(name);
+        const host = await input({ message: 'Host:' });
+        ServerValidator.validateHost(host);
 
-            const host = await input({ message: 'Host:' });
-            ServerValidator.validateHost(host);
+        const username = await input({ message: 'User:' });
+        ServerValidator.validateUsername(username);
 
-            const username = await input({ message: 'User:' });
-            ServerValidator.validateUsername(username);
+        const portInput = await input({
+            message: 'Порт:',
+            default: '22',
+        });
+        const port = parseInt(portInput) || 22;
+        ServerValidator.validatePort(port);
 
-            const portInput = await input({
-                message: 'Порт:',
-                default: '22',
+        const usePassword = await confirm({
+            message: 'Использовать пароль? (Нет = ключ)',
+            default: true,
+        });
+
+        let server: Server;
+
+        if (usePassword) {
+            const pwd = await password({ message: 'Пароль:' });
+            server = { host, username, password: pwd, port };
+        } else {
+            const keyPath = await input({
+                message: 'Путь до ключа:',
+                default: '~/.ssh/id_rsa',
             });
-            const port = parseInt(portInput) || 22;
-            ServerValidator.validatePort(port);
+            server = { host, username, privateKey: keyPath, port };
+        }
 
-            const usePassword = await confirm({
-                message: 'Использовать пароль? (Нет = ключ)',
+        // Тестируем подключение
+        this.console.log('Тестирую подключение к серверу...');
+        const connectionTest = await testSSHConnection(server, this.password);
+
+        if (connectionTest) {
+            this.console.log('✅ Подключение успешно!');
+        } else {
+            this.console.log('❌ Не удалось подключиться к серверу.');
+            const saveAnyway = await confirm({
+                message: 'Сохранить соединение несмотря на неудачный тест?',
+                default: false,
+            });
+
+            if (!saveAnyway) {
+                return null;
+            }
+        }
+
+        // Шифруем пароль если нужно
+        if (server.password && typeof server.password === 'string') {
+            const saveHashedPassword = await confirm({
+                message: 'Зашифровать пароль?',
                 default: true,
             });
 
-            let server: Server;
-
-            if (usePassword) {
-                const pwd = await password({ message: 'Пароль:' });
-                server = { host, username, password: pwd, port };
-            } else {
-                const keyPath = await input({
-                    message: 'Путь до ключа:',
-                    default: '~/.ssh/id_rsa',
-                });
-                server = { host, username, privateKey: keyPath, port };
+            if (saveHashedPassword) {
+                const salt = CryptoManager.generateSalt();
+                const hash = CryptoManager.encrypt(server.password, this.password, salt);
+                server.password = { hash, salt };
             }
-
-            // Тестируем подключение
-            this.console.log('Тестирую подключение к серверу...');
-            const connectionTest = await testSSHConnection(server, this.password);
-
-            if (connectionTest) {
-                this.console.log('✅ Подключение успешно!');
-            } else {
-                this.console.log('❌ Не удалось подключиться к серверу.');
-                const saveAnyway = await confirm({
-                    message: 'Сохранить соединение несмотря на неудачный тест?',
-                    default: false,
-                });
-
-                if (!saveAnyway) {
-                    return null;
-                }
-            }
-
-            // Шифруем пароль если нужно
-            if (server.password && typeof server.password === 'string') {
-                const saveHashedPassword = await confirm({
-                    message: 'Зашифровать пароль?',
-                    default: true,
-                });
-
-                if (saveHashedPassword) {
-                    const salt = CryptoManager.generateSalt();
-                    const hash = CryptoManager.encrypt(server.password, this.password, salt);
-                    server.password = { hash, salt };
-                }
-            }
-
-            server.tunnels = [];
-            ConfigManager.addServer(name, server);
-            this.console.log('Сервер добавлен.');
-
-            return server;
-        } catch (error) {
-            if (error instanceof ValidationError) {
-                this.console.error(`Ошибка валидации: ${error.message}`);
-                logger.error('Validation error in add connection menu', error);
-            } else {
-                this.console.error(`Ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
-                logger.error('Error in add connection menu', error as Error);
-            }
-            return null;
         }
+
+        server.tunnels = [];
+        ConfigManager.addServer(name, server);
+        this.console.log('Сервер добавлен.');
+
+        return server;
     }
 
     /**
@@ -143,7 +153,7 @@ export class MenuManager {
      */
     async showDeleteConnectionMenu(): Promise<string | null> {
         this.console.clear();
-
+        global.currentPlace = 'deleteConnection';
         const serverNames = ConfigManager.getServerNames();
         if (serverNames.length === 0) {
             this.console.log('Нет подключений для удаления.');
@@ -186,7 +196,7 @@ export class MenuManager {
      */
     async showTunnelServerMenu(): Promise<string | null> {
         this.console.clear();
-
+        global.currentPlace = 'tunnelServerMenu';
         const serverNames = ConfigManager.getServerNames();
         if (serverNames.length === 0) {
             this.console.log('Нет серверов для управления туннелями.');
@@ -213,6 +223,8 @@ export class MenuManager {
      * Меню управления туннелями
      */
     async showTunnelManagementMenu(serverName: string, activeTunnels: Tunnel[]): Promise<string> {
+        this.console.clear();
+        global.currentPlace = 'tunnelManagement:' + serverName;
         const server = ConfigManager.getServer(serverName);
         if (!server) {
             throw new Error(`Server ${serverName} not found`);
@@ -245,31 +257,29 @@ export class MenuManager {
     /**
      * Меню добавления туннеля
      */
-    async showAddTunnelMenu(): Promise<Tunnel | null> {
-        try {
-            this.console.clear();
-            const dstHost = await input({
-                message: 'Хост назначения:',
-                default: '127.0.0.1',
-            });
-            const dstPort = await input({ message: 'Порт назначения:' });
+    async showAddTunnelMenu(serverName: string): Promise<Tunnel | null> {
+        this.console.clear();
+        global.currentPlace = 'tunnelAdd:' + serverName;
+        const dstHost = await input({
+            message: 'Хост назначения:',
+            default: '127.0.0.1',
+        });
+        ServerValidator.validateHost(dstHost);
 
-            const srcPort = await input({ message: 'Локальный порт:' });
+        const dstPortInput = await input({ message: 'Порт назначения:' });
+        const dstPort = parseInt(dstPortInput);
+        ServerValidator.validatePort(dstPort);
 
-            const tunnel = { srcPort, dstHost, dstPort };
-            TunnelValidator.validate(tunnel);
+        const srcPortInput = await input({ message: 'Локальный порт:' });
+        const srcPort = parseInt(srcPortInput);
+        ServerValidator.validatePort(srcPort);
 
-            return tunnel;
-        } catch (error) {
-            if (error instanceof ValidationError) {
-                this.console.error(`Ошибка валидации туннеля: ${error.message}`);
-                logger.error('Validation error in add tunnel menu', error);
-            } else {
-                this.console.error(`Ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
-                logger.error('Error in add tunnel menu', error as Error);
-            }
-            return null;
-        }
+        const tunnel = { srcPort: srcPortInput, dstHost, dstPort: dstPortInput };
+        TunnelValidator.validate(tunnel);
+
+        TunnelValidator.validateUnique(serverName, tunnel);
+
+        return tunnel;
     }
 
     /**
@@ -277,6 +287,7 @@ export class MenuManager {
      */
     async showDeleteTunnelMenu(serverName: string): Promise<number | null> {
         this.console.clear();
+        global.currentPlace = 'tunnelDelete:' + serverName;
         const server = ConfigManager.getServer(serverName);
         if (!server || !server.tunnels || server.tunnels.length === 0) {
             this.console.log('Нет туннелей для удаления.');
@@ -315,44 +326,40 @@ export class MenuManager {
      * Меню установки пароля
      */
     async showPasswordSetupMenu(): Promise<string> {
-        try {
-            this.console.clear();
-            const hashPassword = ConfigManager.getPasswordHash();
+        this.console.clear();
+        global.currentPlace = 'passwordSetup';
+        const hashPassword = ConfigManager.getPasswordHash();
 
-            if (hashPassword === '') {
-                const newPassword = await password({
-                    message: 'Введите новый пароль для доступа к SSH Manager:',
-                });
-                PasswordValidator.validate(newPassword);
+        if (hashPassword === '') {
+            const newPassword = await password({
+                message: 'Введите новый пароль для доступа к SSH Manager:',
+            });
+            PasswordValidator.validate(newPassword);
 
-                const confirmPassword = await password({
-                    message: 'Подтвердите пароль:',
-                });
+            const confirmPassword = await password({
+                message: 'Подтвердите пароль:',
+            });
 
-                if (newPassword !== confirmPassword) {
-                    throw new Error('Введённые пароли не совпадают');
-                }
-
-                ConfigManager.setPasswordHash(CryptoManager.createPasswordHash(newPassword));
-                this.console.log('Пароль установлен');
-                logger.info('New password set');
-                return newPassword;
-            } else {
-                const enteredPassword = await password({
-                    message: 'Введите пароль для доступа к SSH Manager:',
-                });
-
-                if (!ConfigManager.checkPassword(enteredPassword)) {
-                    throw new Error('Пароль отличается от заданного');
-                }
-
-                this.console.log('Пароль установлен');
-                logger.info('Password verified');
-                return enteredPassword;
+            if (newPassword !== confirmPassword) {
+                throw new Error('Введённые пароли не совпадают');
             }
-        } catch (error) {
-            logger.error('Error in password setup menu', error as Error);
-            throw error;
+
+            ConfigManager.setPasswordHash(CryptoManager.createPasswordHash(newPassword));
+            this.console.log('Пароль установлен');
+            logger.info('New password set');
+            return newPassword;
+        } else {
+            const enteredPassword = await password({
+                message: 'Введите пароль для доступа к SSH Manager:',
+            });
+
+            if (!ConfigManager.checkPassword(enteredPassword)) {
+                throw new Error('Пароль отличается от заданного');
+            }
+
+            this.console.log('Пароль установлен');
+            logger.info('Password verified');
+            return enteredPassword;
         }
     }
 }

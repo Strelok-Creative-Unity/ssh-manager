@@ -6,6 +6,8 @@ import { AsyncSocketNetClient } from './dataengine';
 import { MenuManager } from './ui/menu';
 import { SSHConnection } from './ssh/connection';
 import { ConfigManager } from './utils/config';
+import { ValidationError } from './exceptions/validation';
+import { confirm } from '@inquirer/prompts';
 
 const PORT = 31337; //!!! Вынести в конфиг и env
 const inPkg = !!(process as any).pkg;
@@ -13,7 +15,10 @@ const inPkg = !!(process as any).pkg;
 declare global {
     var socket: AsyncSocket;
     var password: string;
+    var currentPlace: string;
 }
+
+// console.clear = () => {};
 
 export class SSHManagerApp {
     private menuManager: MenuManager;
@@ -21,19 +26,87 @@ export class SSHManagerApp {
     constructor() {
         this.menuManager = new MenuManager();
         this.setupErrorHandling();
+        this.setupKeyboardHandling();
     }
 
     // !!!: не всегда работает выход, починить -Ka
     private setupErrorHandling(): void {
         process.on('uncaughtException', (err) => {
-            console.error('Uncaught exception:', err);
-            process.exit(1);
+            if (err instanceof ValidationError) {
+                // Handle ValidationError gracefully
+                this.handleValidationError(err);
+            } else {
+                console.error('Uncaught exception:', err);
+                process.exit(1);
+            }
         });
 
         process.on('unhandledRejection', (reason, promise) => {
-            console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-            process.exit(1);
+            // Handle inquirer ExitPromptError gracefully
+            if (reason && typeof reason === 'object' && 'name' in reason && reason.name === 'ExitPromptError') {
+                this.exitHandler();
+            } else if (reason instanceof ValidationError) {
+                // Handle ValidationError gracefully
+                this.handleValidationError(reason);
+            } else {
+                console.error('Unhandled Rejection', reason);
+                process.exit(1);
+            }
         });
+    }
+
+    private setupKeyboardHandling(): void {
+        process.stdin.on('data', (data: Buffer) => {
+            if (data.length === 1 && data[0] === 0x04) {
+                // CTRL+D
+                console.log('\nВыход из приложения...');
+                process.exit(0);
+            }
+        });
+    }
+
+    private async handleValidationError(error: ValidationError): Promise<void> {
+        console.error(`Ошибка валидации: ${error.message}`);
+        console.log('Нажмите Enter для возврата в предыдущее меню...');
+
+        await confirm({
+            message: 'Нажмите Enter для продолжения...',
+            default: true,
+        });
+
+        this.exitHandler();
+    }
+
+    private exitHandler(): void {
+        // console.log(global.currentPlace);
+
+        // Если мы находимся в SSH-сессии, не отключаемся от неё
+        if (global.currentPlace === 'ssh') {
+            return;
+        }
+
+        if (global.currentPlace === 'main') {
+            process.exit(1);
+        }
+
+        if (global.currentPlace.startsWith('tunnelManagement:')) {
+            const serverName = global.currentPlace.split(':')[1];
+            return void this.handleTunnelsMenu();
+        }
+
+        if (global.currentPlace.startsWith('tunnelAdd:')) {
+            const serverName = global.currentPlace.split(':')[1];
+            return void this.handleTunnelManagement(serverName);
+        }
+
+        if (global.currentPlace.startsWith('tunnelDelete:')) {
+            const serverName = global.currentPlace.split(':')[1];
+            return void this.handleTunnelManagement(serverName);
+        }
+
+        console.log('Возвращаемся к главному меню...');
+        global.currentPlace = 'main';
+        this.showMainMenu();
     }
 
     private startDaemon(): void {
@@ -63,7 +136,7 @@ export class SSHManagerApp {
         try {
             global.socket = await AsyncSocketNetClient(socket);
             console.log('Подключился к демону');
-            await this.showMainMenu();
+            this.showMainMenu();
         } catch (error) {
             console.log('Демона нет, запускаю...');
             this.startDaemon();
@@ -72,13 +145,8 @@ export class SSHManagerApp {
     }
 
     private async showMainMenu(): Promise<void> {
-        try {
-            const choice = await this.menuManager.showMainMenu();
-            await this.handleMainMenuChoice(choice);
-        } catch (error) {
-            console.error('Error in main menu:', error);
-            await this.showMainMenu();
-        }
+        const choice = await this.menuManager.showMainMenu();
+        await this.handleMainMenuChoice(choice);
     }
 
     private async handleMainMenuChoice(choice: string): Promise<void> {
@@ -111,121 +179,95 @@ export class SSHManagerApp {
     }
 
     private async handleAddConnection(): Promise<void> {
-        try {
-            await this.menuManager.showAddConnectionMenu();
-        } catch (error) {
-            console.error('Error adding connection:', error);
-        }
+        await this.menuManager.showAddConnectionMenu();
         await this.showMainMenu();
     }
 
     private async handleDeleteConnection(): Promise<void> {
-        try {
-            const deletedServerName = await this.menuManager.showDeleteConnectionMenu();
-            if (deletedServerName) {
-                await this.stopAllTunnelsForServer(deletedServerName);
-            }
-        } catch (error) {
-            console.error('Error deleting connection:', error);
+        const deletedServerName = await this.menuManager.showDeleteConnectionMenu();
+        if (deletedServerName) {
+            await this.stopAllTunnelsForServer(deletedServerName);
         }
+
         await this.showMainMenu();
     }
 
     private async handleTunnelsMenu(): Promise<void> {
-        try {
-            const serverName = await this.menuManager.showTunnelServerMenu();
-            if (serverName) {
-                await this.handleTunnelManagement(serverName);
-            }
-        } catch (error) {
-            console.error('Error in tunnels menu:', error);
+        const serverName = await this.menuManager.showTunnelServerMenu();
+        if (serverName) {
+            await this.handleTunnelManagement(serverName);
+        } else {
+            await this.showMainMenu();
         }
-        await this.showMainMenu();
     }
 
     private async handleTunnelManagement(serverName: string): Promise<void> {
-        try {
-            console.log('Загрузка активных туннелей...');
-            const activeTunnels = await this.listTunnels(serverName);
+        console.log('Загрузка активных туннелей...');
+        const activeTunnels = await this.listTunnels(serverName);
 
-            const action = await this.menuManager.showTunnelManagementMenu(serverName, activeTunnels);
+        const action = await this.menuManager.showTunnelManagementMenu(serverName, activeTunnels);
 
-            if (action === 'back') {
-                return;
-            }
-
-            if (action === 'add') {
-                await this.handleAddTunnel(serverName);
-            } else if (action === 'delete') {
-                await this.handleDeleteTunnel(serverName);
-            } else if (action.startsWith('tunnel:')) {
-                await this.handleToggleTunnel(serverName, action);
-            }
-
-            await this.handleTunnelManagement(serverName);
-        } catch (error) {
-            console.error('Error in tunnel management:', error);
+        if (action === 'back') {
+            return await this.showMainMenu();
         }
+
+        if (action === 'add') {
+            await this.handleAddTunnel(serverName);
+        } else if (action === 'delete') {
+            await this.handleDeleteTunnel(serverName);
+        } else if (action.startsWith('tunnel:')) {
+            await this.handleToggleTunnel(serverName, action);
+        }
+
+        await this.handleTunnelManagement(serverName);
     }
 
     private async handleAddTunnel(serverName: string): Promise<void> {
-        try {
-            const tunnel = await this.menuManager.showAddTunnelMenu();
-            if (tunnel) {
-                const server = ConfigManager.getServer(serverName);
-                if (server) {
-                    if (!server.tunnels) {
-                        server.tunnels = [];
-                    }
-                    server.tunnels.push(tunnel);
-                    ConfigManager.saveConfig();
-                    console.log('Туннель добавлен.');
+        const tunnel = await this.menuManager.showAddTunnelMenu(serverName);
+        if (tunnel) {
+            const server = ConfigManager.getServer(serverName);
+            if (server) {
+                if (!server.tunnels) {
+                    server.tunnels = [];
                 }
+                server.tunnels.push(tunnel);
+                ConfigManager.saveConfig();
+                console.log('Туннель добавлен.');
             }
-        } catch (error) {
-            console.error('Error adding tunnel:', error);
         }
     }
 
     private async handleDeleteTunnel(serverName: string): Promise<void> {
-        try {
-            const tunnelIndex = await this.menuManager.showDeleteTunnelMenu(serverName);
-            if (tunnelIndex !== null) {
-                const server = ConfigManager.getServer(serverName);
-                if (server && server.tunnels) {
-                    const tunnel = server.tunnels[tunnelIndex];
+        const tunnelIndex = await this.menuManager.showDeleteTunnelMenu(serverName);
+        if (tunnelIndex !== null) {
+            const server = ConfigManager.getServer(serverName);
+            if (server && server.tunnels) {
+                const tunnel = server.tunnels[tunnelIndex];
 
-                    await this.stopTunnel(serverName, tunnel);
+                await this.stopTunnel(serverName, tunnel);
 
-                    server.tunnels.splice(tunnelIndex, 1);
-                    ConfigManager.saveConfig();
-                    console.log('Туннель удален.');
-                }
+                server.tunnels.splice(tunnelIndex, 1);
+                ConfigManager.saveConfig();
+                console.log('Туннель удален.');
             }
-        } catch (error) {
-            console.error('Error deleting tunnel:', error);
         }
     }
 
     private async handleToggleTunnel(serverName: string, action: string): Promise<void> {
-        try {
-            const tunnelIndex = parseInt(action.split(':')[1]);
-            const server = ConfigManager.getServer(serverName);
+        const tunnelIndex = parseInt(action.split(':')[1]);
+        const server = ConfigManager.getServer(serverName);
 
-            if (server && server.tunnels) {
-                const tunnel = server.tunnels[tunnelIndex];
-                const activeTunnels = await this.listTunnels(serverName);
+        if (server && server.tunnels) {
+            const tunnel = server.tunnels[tunnelIndex];
+            const activeTunnels = await this.listTunnels(serverName);
 
-                const isActive = activeTunnels.some((at) => at.srcPort === tunnel.srcPort && at.dstHost === tunnel.dstHost && at.dstPort === tunnel.dstPort);
+            const isActive = activeTunnels.some((at) => at.srcPort === tunnel.srcPort && at.dstHost === tunnel.dstHost && at.dstPort === tunnel.dstPort);
 
-                if (isActive) {
-                    await this.stopTunnel(serverName, tunnel);
-                } else {
-                    await this.startTunnel(serverName, tunnel);
-                }
+            if (isActive) {
+                await this.stopTunnel(serverName, tunnel);
+            } else {
+                await this.startTunnel(serverName, tunnel);
             }
-        } catch (error) {
-            console.error('Error toggling tunnel:', error);
         }
     }
 
@@ -238,6 +280,7 @@ export class SSHManagerApp {
                 return;
             }
 
+            global.currentPlace = 'ssh';
             const connection = new SSHConnection(server, global.password);
             await connection.connect();
 
@@ -254,12 +297,7 @@ export class SSHManagerApp {
 
             stream.on('close', () => {
                 connection.disconnect();
-                console.clear();
-                this.showMainMenu();
-            });
-
-            process.on('SIGINT', () => {
-                connection.disconnect();
+                global.currentPlace = 'main';
                 console.clear();
                 this.showMainMenu();
             });
@@ -267,6 +305,7 @@ export class SSHManagerApp {
             process.stdin.on('data', (data: Buffer) => {
                 if (data.length === 1 && data[0] === 0x04) {
                     connection.disconnect();
+                    global.currentPlace = 'main';
                     console.clear();
                     this.showMainMenu();
                 }
@@ -311,15 +350,10 @@ export class SSHManagerApp {
     }
 
     async run(): Promise<void> {
-        try {
-            global.password = await this.menuManager.showPasswordSetupMenu();
-            this.menuManager.setPassword(global.password);
+        global.password = await this.menuManager.showPasswordSetupMenu();
+        this.menuManager.setPassword(global.password);
 
-            await this.connectToDaemon();
-        } catch (error) {
-            console.error('Error starting application:', error);
-            process.exit(1);
-        }
+        await this.connectToDaemon();
     }
 }
 

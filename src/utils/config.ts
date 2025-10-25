@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import { Config, NormalizedServer, Server } from '../types';
 import { CryptoManager } from './crypto';
-import { ConfigValidator, ServerValidator, ValidationError } from './validation';
+import { ConfigValidator, ServerValidator } from './validation';
 import { logger } from './logger';
 
 export class ConfigManager {
@@ -39,7 +39,7 @@ export class ConfigManager {
         if (!this._config) {
             try {
                 const configData = JSON.parse(fs.readFileSync(this.configFile, 'utf8'));
-                ConfigValidator.validate(configData);
+                // ConfigValidator.validate(configData);
                 this._config = configData;
                 logger.debug('Configuration loaded and validated');
             } catch (error) {
