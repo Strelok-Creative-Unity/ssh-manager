@@ -35,7 +35,13 @@ export class TunnelManager {
         );
 
         if (existingTunnel && existingTunnel.isActive) {
-            throw new Error(`Tunnel ${tunnel.srcPort} -> ${tunnel.dstHost}:${tunnel.dstPort} is already active`);
+            throw new Error(
+                global.localization.getGeneric('error.tunnelAlreadyActive', {
+                    srcPort: tunnel.srcPort,
+                    dstHost: tunnel.dstHost,
+                    dstPort: tunnel.dstPort,
+                }),
+            );
         }
 
         // Сокет

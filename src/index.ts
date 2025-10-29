@@ -8,6 +8,8 @@ import { SSHConnection } from './ssh/connection';
 import { ConfigManager } from './utils/config';
 import { ValidationError } from './exceptions/validation';
 import { confirm } from '@inquirer/prompts';
+import { Localization } from './localization';
+import { Language } from './localization/types/data-types';
 
 const PORT = 31337; //!!! Вынести в конфиг и env
 const inPkg = !!(process as any).pkg;
@@ -16,13 +18,24 @@ declare global {
     var socket: AsyncSocket;
     var password: string;
     var currentPlace: string;
+    var localization: Localization;
 }
+
+const localization = new Localization();
+localization.loadFromData(require('./localization/data/localization.json'));
+
+// Загружаем сохраненный язык из конфига
+const savedLanguage = ConfigManager.getLanguage();
+if (savedLanguage) {
+    localization.setLanguage(savedLanguage as Language);
+}
+
+global.localization = localization;
 
 // console.clear = () => {};
 
 export class SSHManagerApp {
     private menuManager: MenuManager;
-
     constructor() {
         this.menuManager = new MenuManager();
         this.setupErrorHandling();
@@ -59,18 +72,18 @@ export class SSHManagerApp {
         process.stdin.on('data', (data: Buffer) => {
             if (data.length === 1 && data[0] === 0x04) {
                 // CTRL+D
-                console.log('\nВыход из приложения...');
+                console.log('\n' + global.localization.get('exit.appExit'));
                 process.exit(0);
             }
         });
     }
 
     private async handleValidationError(error: ValidationError): Promise<void> {
-        console.error(`Ошибка валидации: ${error.message}`);
-        console.log('Нажмите Enter для возврата в предыдущее меню...');
+        console.error(global.localization.getGeneric('error.validation', { message: error.message }));
+        console.log(global.localization.get('continue.pressEnter'));
 
         await confirm({
-            message: 'Нажмите Enter для продолжения...',
+            message: global.localization.get('continue.pressEnterShort'),
             default: true,
         });
 
@@ -104,7 +117,11 @@ export class SSHManagerApp {
             return void this.handleTunnelManagement(serverName);
         }
 
-        console.log('Возвращаемся к главному меню...');
+        if (global.currentPlace === 'languageSelection') {
+            return void this.showMainMenu();
+        }
+
+        console.log(global.localization.get('continue.returning'));
         global.currentPlace = 'main';
         this.showMainMenu();
     }
@@ -123,22 +140,22 @@ export class SSHManagerApp {
     }
 
     private async connectToDaemon(): Promise<void> {
-        console.log('Подключаюсь к демону...');
+        console.log(global.localization.get('daemon.connecting'));
 
         const socket = net.createConnection(PORT, '127.0.0.1');
 
         socket.on('error', () => {
-            console.log('Демона нет, запускаю...');
+            console.log(global.localization.get('daemon.notFound'));
             this.startDaemon();
             setTimeout(() => this.connectToDaemon(), 2000);
         });
 
         try {
             global.socket = await AsyncSocketNetClient(socket);
-            console.log('Подключился к демону');
+            console.log(global.localization.get('daemon.connected'));
             this.showMainMenu();
         } catch (error) {
-            console.log('Демона нет, запускаю...');
+            console.log(global.localization.get('daemon.notFound'));
             this.startDaemon();
             setTimeout(() => this.connectToDaemon(), 2000);
         }
@@ -167,12 +184,16 @@ export class SSHManagerApp {
                 await this.handleTunnelsMenu();
                 break;
 
+            case 'language':
+                await this.handleLanguageChange();
+                break;
+
             default:
                 if (choice.startsWith('ssh:')) {
                     const serverName = choice.split(':')[1];
                     await this.handleSSHConnection(serverName);
                 } else {
-                    console.log('Неизвестный выбор:', choice);
+                    console.log(global.localization.getGeneric('error.unknownChoice', { choice }));
                     await this.showMainMenu();
                 }
         }
@@ -192,6 +213,11 @@ export class SSHManagerApp {
         await this.showMainMenu();
     }
 
+    private async handleLanguageChange(): Promise<void> {
+        await this.menuManager.showLanguageSelectionMenu();
+        await this.showMainMenu();
+    }
+
     private async handleTunnelsMenu(): Promise<void> {
         const serverName = await this.menuManager.showTunnelServerMenu();
         if (serverName) {
@@ -202,7 +228,7 @@ export class SSHManagerApp {
     }
 
     private async handleTunnelManagement(serverName: string): Promise<void> {
-        console.log('Загрузка активных туннелей...');
+        console.log(global.localization.get('tunnels.loading'));
         const activeTunnels = await this.listTunnels(serverName);
 
         const action = await this.menuManager.showTunnelManagementMenu(serverName, activeTunnels);
@@ -232,7 +258,7 @@ export class SSHManagerApp {
                 }
                 server.tunnels.push(tunnel);
                 ConfigManager.saveConfig();
-                console.log('Туннель добавлен.');
+                console.log(global.localization.get('tunnels.tunnelAdded'));
             }
         }
     }
@@ -248,7 +274,7 @@ export class SSHManagerApp {
 
                 server.tunnels.splice(tunnelIndex, 1);
                 ConfigManager.saveConfig();
-                console.log('Туннель удален.');
+                console.log(global.localization.get('tunnels.tunnelDeleted'));
             }
         }
     }
@@ -275,7 +301,7 @@ export class SSHManagerApp {
         try {
             const server = ConfigManager.getServer(serverName);
             if (!server) {
-                console.log(`Сервер ${serverName} не найден`);
+                console.log(global.localization.getGeneric('error.serverNotFound', { name: serverName }));
                 await this.showMainMenu();
                 return;
             }
@@ -310,8 +336,8 @@ export class SSHManagerApp {
                     this.showMainMenu();
                 }
             });
-        } catch (error) {
-            console.error('Error connecting to SSH:', error);
+        } catch (error: any) {
+            console.error(global.localization.getGeneric('error.sshConnection', { message: error.message }));
             await this.showMainMenu();
         }
     }

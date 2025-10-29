@@ -5,6 +5,7 @@ import { Config, NormalizedServer, Server } from '../types';
 import { CryptoManager } from './crypto';
 import { ConfigValidator, ServerValidator } from './validation';
 import { logger } from './logger';
+import { Language } from '../localization/types/data-types';
 
 export class ConfigManager {
     private static readonly configDir = path.join(os.homedir(), '.ssh-manager');
@@ -106,7 +107,8 @@ export class ConfigManager {
             if (fs.existsSync(keyPath)) {
                 normalizedServer.privateKey = fs.readFileSync(keyPath, 'utf8');
             } else {
-                throw new Error(`Private key file not found: ${keyPath}`);
+                const { ValidationError } = require('../exceptions/validation');
+                throw new ValidationError(global.localization.getGeneric('config.privateKeyNotFound', { keyPath }));
             }
         }
 
@@ -160,5 +162,22 @@ export class ConfigManager {
     static getServerNames(): string[] {
         const config = this.getConfig();
         return Object.keys(config.servers);
+    }
+
+    /**
+     * Получает выбранный язык
+     */
+    static getLanguage(): Language {
+        const config = this.getConfig();
+        return (config.language as Language) || 'en';
+    }
+
+    /**
+     * Устанавливает выбранный язык
+     */
+    static setLanguage(language: Language): void {
+        const config = this.getConfig();
+        config.language = language;
+        this.saveConfig();
     }
 }

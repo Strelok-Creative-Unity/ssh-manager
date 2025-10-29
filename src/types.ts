@@ -25,4 +25,5 @@ export interface NormalizedServer extends Server {
 
 export interface Config {
     servers: Record<string, Server>;
+    language?: string;
 }

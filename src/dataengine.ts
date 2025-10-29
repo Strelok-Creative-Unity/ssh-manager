@@ -56,7 +56,7 @@ export class NetEngine extends EventEmitter implements Engine {
             this.socket = netOptions;
         } else {
             if (netOptions.address === null) {
-                throw new Error('Net address cannot be null for NetEngine.');
+                throw new Error(global.localization.get('error.netAddressNull'));
             }
 
             this.socket = net.createConnection(netOptions.port, netOptions.address);

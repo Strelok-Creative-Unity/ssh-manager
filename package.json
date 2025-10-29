@@ -4,12 +4,12 @@
     "description": "SSH connection and tunnel manager",
     "main": "dist/index.js",
     "scripts": {
-        "build": "tsc && npx pkg .",
-        "build:ts": "tsc",
+        "build": "tsc && cp -r src/localization/data dist/localization/ && npx pkg .",
+        "build:ts": "tsc && cp -r src/localization/data dist/localization/",
         "build:check": "tsc --noEmit",
-        "build:linux": "tsc && npx pkg . --targets node18-linux-x64 --output release/ssh-manager-linux",
-        "build:windows": "tsc && npx pkg . --targets node18-win-x64 --output release/ssh-manager-win.exe",
-        "build:macos": "tsc && npx pkg . --targets node18-macos-arm64 --output release/ssh-manager-macos",
+        "build:linux": "tsc && cp -r src/localization/data dist/localization/ && npx pkg . --targets node18-linux-x64 --output release/ssh-manager-linux",
+        "build:windows": "tsc && cp -r src/localization/data dist/localization/ && npx pkg . --targets node18-win-x64 --output release/ssh-manager-win.exe",
+        "build:macos": "tsc && cp -r src/localization/data dist/localization/ && npx pkg . --targets node18-macos-arm64 --output release/ssh-manager-macos",
         "start": "node dist/index.js",
         "dev": "ts-node src/index.ts",
         "tunnel": "ts-node src/ssh-tunel.ts",
@@ -20,7 +20,9 @@
         "scripts": [
             "dist/**/*.js"
         ],
-        "assets": [],
+        "assets": [
+            "dist/localization/data/localization.json"
+        ],
         "outputPath": "release"
     },
     "dependencies": {

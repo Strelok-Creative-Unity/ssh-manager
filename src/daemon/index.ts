@@ -42,7 +42,7 @@ export class DaemonManager {
 
         const PORT = 31337;
         serverEngine.server.listen(PORT, '127.0.0.1', () => {
-            console.log(`Демон слушает ${PORT}`);
+            console.log(`Daemon listening on ${PORT}`);
         });
     }
 
@@ -178,7 +178,6 @@ function runDaemon(): void {
         daemon.setPassword(password.toString().trim());
     });
 
-    // Не требуется, но Костя сказал оставить
     process.on('SIGINT', () => {
         console.log('Shutting down daemon...');
         daemon.stop();
