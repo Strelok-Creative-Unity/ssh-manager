@@ -1,23 +1,11 @@
 import { select, input, confirm, password } from '@inquirer/prompts';
-import { Server, Tunnel } from '../types';
+import { type Server, type Tunnel } from '../types';
 import { ConfigManager } from '../utils/config';
-import { CryptoManager } from '../utils/crypto';
-import { testSSHConnection } from '../ssh/connection';
 import { ServerValidator, TunnelValidator, PasswordValidator } from '../utils/validation';
-import { logger } from '../utils/logger';
-import { ValidationError } from '../exceptions/validation';
-import { Language } from '../localization/types/data-types';
+import { type Language } from '../localization/types/data-types';
 
 export class MenuManager {
-    private password: string = '';
     console: Console;
-
-    /**
-     * Устанавливает пароль для текущей сессии
-     */
-    setPassword(password: string): void {
-        this.password = password;
-    }
 
     constructor() {
         this.console = console;
@@ -46,36 +34,19 @@ export class MenuManager {
 
         return await select({
             message: global.localization.get('menu.selectAction'),
-            pageSize: process.stdout.rows - 3, // 3 - это высота меню, не убирать
             choices,
+            ...this.defaultConfig,
         });
     }
 
-    private async handleValidationError(error: Error): Promise<void> {
-        global.currentPlace = 'exception';
-        if (error instanceof ValidationError) {
-            this.console.error(global.localization.getGeneric('error.validation', { message: error.message }));
-            logger.error('Validation error in menu', error);
-        } else if (error.name === 'ExitPromptError') {
-            this.console.log('\n' + global.localization.get('error.cancelled'));
-            logger.info('User cancelled operation with Ctrl+C');
-            return; // Не показываем confirm для ExitPromptError
-        } else {
-            const errorMessage = error instanceof Error ? error.message : global.localization.get('error.unknownError');
-            this.console.error(global.localization.getGeneric('error.unknown', { message: errorMessage }));
-            logger.error('Error in menu', error as Error);
-        }
-
-        await confirm({
-            message: global.localization.get('continue.pressEnterShort'),
-            default: true,
-        });
+    get defaultConfig(): { pageSize: number } {
+        return { pageSize: process.stdout.rows };
     }
 
     /**
      * Меню добавления подключения
      */
-    async showAddConnectionMenu(): Promise<Server | null> {
+    async showAddConnectionMenu(): Promise<{ name: string; server: Server }> {
         this.console.clear();
         global.currentPlace = 'addConnection';
         const name = await input({ message: global.localization.get('add.connectionName') });
@@ -90,6 +61,7 @@ export class MenuManager {
         const portInput = await input({
             message: global.localization.get('add.port'),
             default: '22',
+            ...this.defaultConfig,
         });
         const port = parseInt(portInput) || 22;
         ServerValidator.validatePort(port);
@@ -97,6 +69,7 @@ export class MenuManager {
         const usePassword = await confirm({
             message: global.localization.get('add.usePassword'),
             default: true,
+            ...this.defaultConfig,
         });
 
         let server: Server;
@@ -108,59 +81,24 @@ export class MenuManager {
             const keyPath = await input({
                 message: global.localization.get('add.keyPath'),
                 default: '~/.ssh/id_rsa',
+                ...this.defaultConfig,
             });
             server = { host, username, privateKey: keyPath, port };
         }
 
-        // Тестируем подключение
-        this.console.log(global.localization.get('add.testingConnection'));
-        const connectionTest = await testSSHConnection(server, this.password);
-
-        if (connectionTest) {
-            this.console.log(global.localization.get('add.connectionSuccess'));
-        } else {
-            this.console.log(global.localization.get('add.connectionFailed'));
-            const saveAnyway = await confirm({
-                message: global.localization.get('add.saveAnyway'),
-                default: false,
-            });
-
-            if (!saveAnyway) {
-                return null;
-            }
-        }
-
-        // Шифруем пароль если нужно
-        if (server.password && typeof server.password === 'string') {
-            const saveHashedPassword = await confirm({
-                message: global.localization.get('add.encryptPassword'),
-                default: true,
-            });
-
-            if (saveHashedPassword) {
-                const salt = CryptoManager.generateSalt();
-                const hash = CryptoManager.encrypt(server.password, this.password, salt);
-                server.password = { hash, salt };
-            }
-        }
-
-        server.tunnels = [];
-        ConfigManager.addServer(name, server);
-        this.console.log(global.localization.get('add.serverAdded'));
-
-        return server;
+        return { name, server };
     }
 
     /**
      * Меню удаления подключения
      */
-    async showDeleteConnectionMenu(): Promise<string | null> {
+    async showDeleteConnectionMenu(): Promise<{ serverName: string | null; confirmed: boolean }> {
         this.console.clear();
         global.currentPlace = 'deleteConnection';
         const serverNames = ConfigManager.getServerNames();
         if (serverNames.length === 0) {
             this.console.log(global.localization.get('delete.noConnections'));
-            return null;
+            return { serverName: null, confirmed: false };
         }
 
         const choices = [
@@ -174,10 +112,11 @@ export class MenuManager {
         const serverName = await select({
             message: global.localization.get('delete.selectConnection'),
             choices,
+            ...this.defaultConfig,
         });
 
         if (serverName === 'back') {
-            return null;
+            return { serverName: null, confirmed: false };
         }
 
         const confirmed = await confirm({
@@ -185,13 +124,7 @@ export class MenuManager {
             default: false,
         });
 
-        if (confirmed) {
-            ConfigManager.removeServer(serverName);
-            this.console.log(global.localization.getGeneric('delete.connectionDeleted', { name: serverName }));
-            return serverName;
-        }
-
-        return null;
+        return { serverName, confirmed };
     }
 
     /**
@@ -217,6 +150,7 @@ export class MenuManager {
         const serverName = await select({
             message: global.localization.get('tunnels.selectServer'),
             choices,
+            ...this.defaultConfig,
         });
 
         return serverName === 'back' ? null : serverName;
@@ -254,18 +188,20 @@ export class MenuManager {
         return await select({
             message: global.localization.get('tunnels.action'),
             choices,
+            ...this.defaultConfig,
         });
     }
 
     /**
      * Меню добавления туннеля
      */
-    async showAddTunnelMenu(serverName: string): Promise<Tunnel | null> {
+    async showAddTunnelMenu(serverName: string): Promise<Tunnel> {
         this.console.clear();
         global.currentPlace = 'tunnelAdd:' + serverName;
         const dstHost = await input({
             message: global.localization.get('tunnel.destinationHost'),
             default: '127.0.0.1',
+            ...this.defaultConfig,
         });
         ServerValidator.validateHost(dstHost);
 
@@ -308,6 +244,7 @@ export class MenuManager {
         const tunnelToDelete = await select({
             message: global.localization.get('tunnels.deleteSelect'),
             choices,
+            ...this.defaultConfig,
         });
 
         if (tunnelToDelete === 'back') {
@@ -320,6 +257,7 @@ export class MenuManager {
         const confirmed = await confirm({
             message: global.localization.getGeneric('tunnels.deleteConfirm', { src: tunnel.srcPort, dst: tunnel.dstHost, port: tunnel.dstPort }),
             default: false,
+            ...this.defaultConfig,
         });
 
         return confirmed ? tunnelIndex : null;
@@ -328,7 +266,7 @@ export class MenuManager {
     /**
      * Меню выбора языка
      */
-    async showLanguageSelectionMenu(): Promise<string | null> {
+    async showLanguageSelectionMenu(): Promise<Language | null> {
         this.console.clear();
         global.currentPlace = 'languageSelection';
         const availableLanguages = global.localization.getAvailableLanguages();
@@ -345,25 +283,16 @@ export class MenuManager {
         const selectedLanguage = (await select({
             message: global.localization.get('language.select'),
             choices,
+            ...this.defaultConfig,
         })) as Language | 'back';
 
-        if (selectedLanguage === 'back') {
-            return null;
-        }
-
-        global.localization.setLanguage(selectedLanguage);
-        ConfigManager.setLanguage(selectedLanguage);
-
-        const languageName = availableLanguages.find((lang) => lang.value === selectedLanguage)?.name;
-        this.console.log(global.localization.getGeneric('language.changed', { language: languageName || selectedLanguage }));
-
-        return selectedLanguage;
+        return selectedLanguage === 'back' ? null : selectedLanguage;
     }
 
     /**
      * Меню установки пароля
      */
-    async showPasswordSetupMenu(): Promise<string> {
+    async showPasswordSetupMenu(): Promise<{ isNewPassword: boolean; password: string; confirmPassword?: string }> {
         this.console.clear();
         global.currentPlace = 'passwordSetup';
         const hashPassword = ConfigManager.getPasswordHash();
@@ -371,33 +300,65 @@ export class MenuManager {
         if (hashPassword === '') {
             const newPassword = await password({
                 message: global.localization.get('password.newPassword'),
+                ...this.defaultConfig,
             });
             PasswordValidator.validate(newPassword);
 
             const confirmPassword = await password({
                 message: global.localization.get('password.confirmPassword'),
+                ...this.defaultConfig,
             });
 
             if (newPassword !== confirmPassword) {
                 throw new Error(global.localization.get('password.notMatch'));
             }
 
-            ConfigManager.setPasswordHash(CryptoManager.createPasswordHash(newPassword));
-            this.console.log(global.localization.get('password.set'));
-            logger.info('New password set');
-            return newPassword;
+            return { isNewPassword: true, password: newPassword, confirmPassword };
         } else {
             const enteredPassword = await password({
                 message: global.localization.get('password.enterPassword'),
+                ...this.defaultConfig,
             });
 
+            // Валидация: проверка пароля
             if (!ConfigManager.checkPassword(enteredPassword)) {
                 throw new Error(global.localization.get('password.wrongPassword'));
             }
 
-            this.console.log(global.localization.get('password.set'));
-            logger.info('Password verified');
-            return enteredPassword;
+            return { isNewPassword: false, password: enteredPassword };
         }
+    }
+
+    /**
+     * Запрашивает подтверждение сохранения подключения при неудачном тесте
+     */
+    async askSaveConnectionAnyway(): Promise<boolean> {
+        return await confirm({
+            message: global.localization.get('add.saveAnyway'),
+            default: false,
+            ...this.defaultConfig,
+        });
+    }
+
+    /**
+     * Запрашивает подтверждение шифрования пароля
+     */
+    async askEncryptPassword(): Promise<boolean> {
+        return await confirm({
+            message: global.localization.get('add.encryptPassword'),
+            default: true,
+            ...this.defaultConfig,
+        });
+    }
+
+    /**
+     * Запрашивает подтверждение продолжения после ошибки
+     */
+    async askContinueAfterError(): Promise<boolean> {
+        return await confirm({
+            message: global.localization.get('continue.pressEnterShort'),
+            default: true,
+            ...this.defaultConfig,
+        });
     }
 }

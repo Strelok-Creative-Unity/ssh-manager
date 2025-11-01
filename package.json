@@ -1,6 +1,6 @@
 {
     "name": "ssh-manager",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "SSH connection and tunnel manager",
     "main": "dist/index.js",
     "scripts": {
@@ -9,6 +9,7 @@
         "build:check": "tsc --noEmit",
         "build:linux": "tsc && cp -r src/localization/data dist/localization/ && npx pkg . --targets node18-linux-x64 --output release/ssh-manager-linux",
         "build:windows": "tsc && cp -r src/localization/data dist/localization/ && npx pkg . --targets node18-win-x64 --output release/ssh-manager-win.exe",
+        "build:windows:win32": "tsc && xcopy /E /I /Y src\\localization\\data dist\\localization\\data && npx pkg . --targets node18-win-x64 --output release/ssh-manager-win.exe",
         "build:macos": "tsc && cp -r src/localization/data dist/localization/ && npx pkg . --targets node18-macos-arm64 --output release/ssh-manager-macos",
         "start": "node dist/index.js",
         "dev": "ts-node src/index.ts",
