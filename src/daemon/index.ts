@@ -1,5 +1,5 @@
-import { AsyncSocket } from 'asyncsocket';
-import { AsyncSocketNetServer, NetIncomingDataStore, NetServerEngine } from '../dataengine';
+import { AsyncSocket, AsyncSocketServer, IncomingDataPackage } from 'asyncsocket';
+import { AsyncSocketNetServer, NetEngine, NetServerEngine } from '../dataengine';
 import { ConfigManager } from '../utils/config';
 import { TunnelManager } from './tunnel/manager';
 import { Tunnel } from '../types';
@@ -12,7 +12,7 @@ export interface DaemonMessage {
 
 export class DaemonManager {
     private tunnelManager: TunnelManager;
-    private server: any;
+    private server!: AsyncSocketServer<NetServerEngine, AsyncSocket<NetEngine>>;
     private password: string = '';
 
     constructor() {
@@ -32,10 +32,10 @@ export class DaemonManager {
      */
     private initializeServer(): void {
         this.server = AsyncSocketNetServer();
-        const serverEngine = this.server.engine as NetServerEngine;
+        const serverEngine = this.server.engine;
 
-        this.server.on('connection', (socket: AsyncSocket) => {
-            socket.on('message', async (message: NetIncomingDataStore) => {
+        this.server.on('connection', (socket: AsyncSocket<NetEngine>) => {
+            socket.on('message', async (message: IncomingDataPackage<any>) => {
                 await this.handleMessage(message);
             });
         });
@@ -49,7 +49,7 @@ export class DaemonManager {
     /**
      * Общий обработчик сообщений
      */
-    private async handleMessage(message: NetIncomingDataStore): Promise<void> {
+    private async handleMessage(message: IncomingDataPackage<any>): Promise<void> {
         try {
             const data = message.data as unknown as DaemonMessage;
 
@@ -84,7 +84,7 @@ export class DaemonManager {
     /**
      * Обрабатывает: "запуск туннеля"
      */
-    private async handleStartTunnel(data: DaemonMessage, message: NetIncomingDataStore): Promise<void> {
+    private async handleStartTunnel(data: DaemonMessage, message: IncomingDataPackage<any>): Promise<void> {
         if (!data.servername || !data.tunnel) {
             message.sendNoReply({
                 success: false,
@@ -116,7 +116,7 @@ export class DaemonManager {
     /**
      * Обрабатывает: "остановка туннеля"
      */
-    private async handleStopTunnel(data: DaemonMessage, message: NetIncomingDataStore): Promise<void> {
+    private async handleStopTunnel(data: DaemonMessage, message: IncomingDataPackage<any>): Promise<void> {
         if (!data.servername || !data.tunnel) {
             message.sendNoReply({
                 success: false,
@@ -139,7 +139,7 @@ export class DaemonManager {
     /**
      * Обрабатывает запрос: "список туннелей"
      */
-    private async handleListTunnels(data: DaemonMessage, message: NetIncomingDataStore): Promise<void> {
+    private async handleListTunnels(data: DaemonMessage, message: IncomingDataPackage<any>): Promise<void> {
         if (!data.servername) {
             message.sendNoReply({
                 success: false,

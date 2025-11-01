@@ -1,4 +1,4 @@
-import { AsyncSocket, AsyncSocketPackageRestData, AsyncSocketServer, Engine, IncomingDataPackage, JSONValue, ServerEngine } from 'asyncsocket';
+import { AsyncSocket, AsyncSocketPackageRestData, AsyncSocketServer, Engine, IncomingDataPackage, ServerEngine } from 'asyncsocket';
 import { EventEmitter } from 'events';
 import * as net from 'net';
 
@@ -13,8 +13,8 @@ function JSONParse(message: string) {
 //!!! Вынести в библиотеку -Ka
 type NetEngineOptions = { address: string; port: number; options?: net.TcpNetConnectOpts } | net.Socket;
 
-export class NetIncomingDataStore implements IncomingDataPackage {
-    data: JSONValue;
+export class NetIncomingDataStore<d = any> implements IncomingDataPackage<d> {
+    data: d;
     waitId?: string;
     isEvent = false;
     as!: AsyncSocket;
@@ -26,9 +26,9 @@ export class NetIncomingDataStore implements IncomingDataPackage {
         this.as = as;
         return this;
     }
-    async send<d extends JSONValue = JSONValue>(
+    async send<d = any>(
         data: AsyncSocketPackageRestData & {
-            [key: string]: JSONValue;
+            [key: string]: any;
         },
     ): Promise<IncomingDataPackage<d>> {
         return this.as.send({
@@ -36,12 +36,12 @@ export class NetIncomingDataStore implements IncomingDataPackage {
             waitId: typeof data.waitId === 'string' ? data.waitId : this.waitId!,
         });
     }
-    async sendNoReply(
+    sendNoReply(
         data: AsyncSocketPackageRestData & {
-            [key: string]: JSONValue;
+            [key: string]: any;
         },
-    ) {
-        return this.as.sendNoReply({
+    ): void {
+        this.as.sendNoReply({
             data,
             waitId: typeof data.waitId === 'string' ? data.waitId : this.waitId!,
         });
@@ -80,7 +80,7 @@ export class NetEngine extends EventEmitter implements Engine {
             }
         });
     }
-    send(data: JSONValue) {
+    send(data: any) {
         this.socket.write(JSON.stringify(data) + '\n');
     }
 }

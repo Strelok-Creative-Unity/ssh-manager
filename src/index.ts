@@ -10,6 +10,7 @@ import { ValidationError } from './exceptions/validation';
 import { confirm } from '@inquirer/prompts';
 import { Localization } from './localization';
 import { Language } from './localization/types/data-types';
+import { Tunnel } from './types';
 
 const PORT = 31337; //!!! Вынести в конфиг и env
 const inPkg = !!(process as any).pkg;
@@ -144,8 +145,10 @@ export class SSHManagerApp {
 
         const socket = net.createConnection(PORT, '127.0.0.1');
 
-        socket.on('error', () => {
+        socket.once('error', (error) => {
             console.log(global.localization.get('daemon.notFound'));
+
+            console.error(error);
             this.startDaemon();
             setTimeout(() => this.connectToDaemon(), 2000);
         });
@@ -358,12 +361,12 @@ export class SSHManagerApp {
         });
     }
 
-    private async listTunnels(serverName: string): Promise<any[]> {
-        const response = await global.socket.send({
+    private async listTunnels(serverName: string): Promise<Tunnel[]> {
+        const response = await global.socket.send<{ tunnels: Tunnel[] }>({
             action: 'listTunnels',
             servername: serverName,
         });
-        return (response.data as any).tunnels || [];
+        return response.data?.tunnels ?? [];
     }
 
     private async stopAllTunnelsForServer(serverName: string): Promise<void> {
