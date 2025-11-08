@@ -103,12 +103,12 @@ export class TunnelValidator {
             throw new ValidationError(global.localization.get('validation.destinationPortRequired'));
         }
 
-        const srcPort = parseInt(tunnel.srcPort);
+        const srcPort = +tunnel.srcPort;
         if (isNaN(srcPort) || srcPort < 1 || srcPort > 65535) {
             throw new ValidationError(global.localization.get('validation.sourcePortRange'));
         }
 
-        const dstPort = parseInt(tunnel.dstPort);
+        const dstPort = +tunnel.dstPort;
         if (isNaN(dstPort) || dstPort < 1 || dstPort > 65535) {
             throw new ValidationError(global.localization.get('validation.destinationPortRange'));
         }

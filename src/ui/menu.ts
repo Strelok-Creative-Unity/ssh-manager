@@ -206,14 +206,14 @@ export class MenuManager {
         ServerValidator.validateHost(dstHost);
 
         const dstPortInput = await input({ message: global.localization.get('tunnel.destinationPort') });
-        const dstPort = parseInt(dstPortInput);
+        const dstPort = +dstPortInput;
         ServerValidator.validatePort(dstPort);
 
         const srcPortInput = await input({ message: global.localization.get('tunnel.localPort') });
-        const srcPort = parseInt(srcPortInput);
+        const srcPort = +srcPortInput;
         ServerValidator.validatePort(srcPort);
 
-        const tunnel = { srcPort: srcPortInput, dstHost, dstPort: dstPortInput };
+        const tunnel = { srcPort: srcPort.toString(), dstHost, dstPort: dstPort.toString() };
         TunnelValidator.validate(tunnel);
 
         TunnelValidator.validateUnique(serverName, tunnel);
