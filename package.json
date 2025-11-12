@@ -28,6 +28,7 @@
     },
     "dependencies": {
         "@inquirer/prompts": "^7.8.6",
+        "ase-net": "github:Strelok-Creative-Unity/ASE-Net#test",
         "asyncsocket": "github:strelok-js/AsyncSocket#test",
         "ssh2": "^1.17.0"
     },

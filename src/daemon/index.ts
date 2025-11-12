@@ -1,5 +1,5 @@
 import { AsyncSocket, AsyncSocketServer, IncomingDataPackage } from 'asyncsocket';
-import { AsyncSocketNetServer, NetEngine, NetServerEngine } from '../dataengine';
+import { AsyncSocketNetServer, NetEngine, NetServerEngine } from 'ase-net';
 import { ConfigManager } from '../utils/config';
 import { TunnelManager } from './tunnel/manager';
 import { Tunnel } from '../types';
@@ -75,8 +75,10 @@ export class DaemonManager {
         } catch (error) {
             console.error('Error handling message:', error);
             message.sendNoReply({
-                success: false,
-                error: error instanceof Error ? error.message : 'Unknown error',
+                data: {
+                    success: false,
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                },
             });
         }
     }
@@ -87,8 +89,10 @@ export class DaemonManager {
     private async handleStartTunnel(data: DaemonMessage, message: IncomingDataPackage<any>): Promise<void> {
         if (!data.servername || !data.tunnel) {
             message.sendNoReply({
-                success: false,
-                error: 'Missing servername or tunnel data',
+                data: {
+                    success: false,
+                    error: 'Missing servername or tunnel data',
+                },
             });
             return;
         }
@@ -96,19 +100,23 @@ export class DaemonManager {
         const server = ConfigManager.getServer(data.servername);
         if (!server) {
             message.sendNoReply({
-                success: false,
-                error: `Server ${data.servername} not found`,
+                data: {
+                    success: false,
+                    error: `Server ${data.servername} not found`,
+                },
             });
             return;
         }
 
         try {
             await this.tunnelManager.startTunnel(data.servername, server, this.password, data.tunnel);
-            message.sendNoReply({ success: true });
+            message.sendNoReply({ data: { success: true } });
         } catch (error) {
             message.sendNoReply({
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to start tunnel',
+                data: {
+                    success: false,
+                    error: error instanceof Error ? error.message : 'Failed to start tunnel',
+                },
             });
         }
     }
@@ -119,19 +127,23 @@ export class DaemonManager {
     private async handleStopTunnel(data: DaemonMessage, message: IncomingDataPackage<any>): Promise<void> {
         if (!data.servername || !data.tunnel) {
             message.sendNoReply({
-                success: false,
-                error: 'Missing servername or tunnel data',
+                data: {
+                    success: false,
+                    error: 'Missing servername or tunnel data',
+                },
             });
             return;
         }
 
         try {
             this.tunnelManager.stopTunnel(data.servername, data.tunnel);
-            message.sendNoReply({ success: true });
+            message.sendNoReply({ data: { success: true } });
         } catch (error) {
             message.sendNoReply({
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to stop tunnel',
+                data: {
+                    success: false,
+                    error: error instanceof Error ? error.message : 'Failed to stop tunnel',
+                },
             });
         }
     }
@@ -142,8 +154,10 @@ export class DaemonManager {
     private async handleListTunnels(data: DaemonMessage, message: IncomingDataPackage<any>): Promise<void> {
         if (!data.servername) {
             message.sendNoReply({
-                success: false,
-                error: 'Missing servername',
+                data: {
+                    success: false,
+                    error: 'Missing servername',
+                },
             });
             return;
         }
@@ -151,13 +165,17 @@ export class DaemonManager {
         try {
             const tunnels = this.tunnelManager.getActiveTunnels(data.servername);
             message.sendNoReply({
-                success: true,
-                tunnels: tunnels as any,
+                data: {
+                    success: true,
+                    tunnels: tunnels as any,
+                },
             });
         } catch (error) {
             message.sendNoReply({
-                success: false,
-                error: error instanceof Error ? error.message : 'Failed to list tunnels',
+                data: {
+                    success: false,
+                    error: error instanceof Error ? error.message : 'Failed to list tunnels',
+                },
             });
         }
     }

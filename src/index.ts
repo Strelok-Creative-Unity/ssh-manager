@@ -2,7 +2,7 @@
 import { spawn } from 'child_process';
 import net from 'net';
 import { AsyncSocket } from 'asyncsocket';
-import { AsyncSocketNetClient } from './dataengine';
+import { AsyncSocketNetClient } from 'ase-net';
 import { MenuManager } from './ui/menu';
 import { SSHConnection, testSSHConnection } from './ssh';
 import { ConfigManager } from './utils/config';
