@@ -4,6 +4,8 @@ import { ConfigManager } from '../utils/config';
 import { ServerValidator, TunnelValidator, PasswordValidator } from '../utils/validation';
 import { type Language } from '../localization/types/data-types';
 
+const MAX_PASSWORD_ATTEMPTS = 3;
+
 export class MenuManager {
     console: Console;
 
@@ -315,17 +317,30 @@ export class MenuManager {
 
             return { isNewPassword: true, password: newPassword, confirmPassword };
         } else {
-            const enteredPassword = await password({
-                message: global.localization.get('password.enterPassword'),
-                ...this.defaultConfig,
-            });
+            let attempts = 0;
 
-            // Валидация: проверка пароля
-            if (!ConfigManager.checkPassword(enteredPassword)) {
-                throw new Error(global.localization.get('password.wrongPassword'));
+            while (attempts < MAX_PASSWORD_ATTEMPTS) {
+                const enteredPassword = await password({
+                    message: global.localization.get('password.enterPassword'),
+                    ...this.defaultConfig,
+                });
+
+                if (ConfigManager.checkPassword(enteredPassword)) {
+                    return { isNewPassword: false, password: enteredPassword };
+                }
+
+                attempts++;
+                const remainingAttempts = MAX_PASSWORD_ATTEMPTS - attempts;
+
+                if (remainingAttempts > 0) {
+                    this.console.log(global.localization.getGeneric('password.wrongPasswordAttempts', { attempts: remainingAttempts.toString() }));
+                } else {
+                    throw new Error(global.localization.get('password.maxAttemptsReached'));
+                }
             }
 
-            return { isNewPassword: false, password: enteredPassword };
+            // Недостижим, но TS плоха -Ka
+            throw new Error(global.localization.get('password.maxAttemptsReached'));
         }
     }
 

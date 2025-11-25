@@ -8,6 +8,8 @@
         "build:ts": "tsc && cp -r src/localization/data dist/localization/",
         "build:check": "tsc --noEmit",
         "build:linux": "tsc && cp -r src/localization/data dist/localization/ && npx pkg . --targets node18-linux-x64 --output release/ssh-manager-linux",
+        "build:linux:pub": "tsc && cp -r src/localization/data dist/localization/ && npx pkg . --targets node18-linux-x64 --output release/ssh-manager",
+        "install:linux": "test -f release/ssh-manager && sudo mv release/ssh-manager /usr/local/bin/ssh-manager && sudo chmod +x /usr/local/bin/ssh-manager && echo '✅ ssh-manager установлен в /usr/local/bin' || (echo 'Ошибка: Сначала выполните: npm run build:linux:pub' && exit 1)",
         "build:windows": "tsc && cp -r src/localization/data dist/localization/ && npx pkg . --targets node18-win-x64 --output release/ssh-manager-win.exe",
         "build:windows:win32": "tsc && xcopy /E /I /Y src\\localization\\data dist\\localization\\data && npx pkg . --targets node18-win-x64 --output release/ssh-manager-win.exe",
         "build:macos": "tsc && cp -r src/localization/data dist/localization/ && npx pkg . --targets node18-macos-arm64 --output release/ssh-manager-macos",
